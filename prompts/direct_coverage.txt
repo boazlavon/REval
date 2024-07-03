@@ -1,0 +1,46 @@
+You are given a Python function and a question on the function. Answer the question with only YES or NO, considering executing the provided code on the given input, even if the function is incorrect or incomplete. Do NOT output any extra information. Provide your answer in [ANSWER] and [/ANSWER] tags, following the examples.
+
+[PYTHON]
+def f(x):
+    if x > 2:
+        return x*2
+    else:
+        return x
+f(3)
+[/PYTHON]
+[QUESTION]
+Is Line 3 (        return x*2) executed when f(3) is called?
+[/QUESTION]
+[ANSWER]
+YES
+[/ANSWER]
+
+[PYTHON]
+class A:
+    def g(self, x):
+        if x > 2:
+            return self.h(x)
+        else:
+            return x
+
+    def h(self, y):
+        return y*2
+
+a = A()
+assertEqual(a.g(1), 1)
+[/PYTHON]
+[QUESTION]
+Is Line 9 (        return y*2) executed when the above test code is called?
+[/QUESTION]
+[ANSWER]
+NO
+[/ANSWER]
+
+[PYTHON]
+{code}
+{invocation}
+[/PYTHON]
+[QUESTION]
+Is Line {line} ({codeline}) executed when {invocation_abbr} is called?
+[/QUESTION]
+[ANSWER]

@@ -1,0 +1,65 @@
+You are given a Python function and a question on the function. Answer the question with only one line of code, considering executing the provided code on the given input, even if the function is incorrect or incomplete. Do NOT output any extra information. Provide your answer in [ANSWER] and [/ANSWER] tags, following the examples.
+
+[PYTHON]
+def f(a, b):
+    ans = a + b
+    if ans > 0:
+        ans = int(a)
+    else:
+        ans = b
+    return ans
+
+f(1.1, 2)
+[/PYTHON]
+[QUESTION]
+If the line `        ans = int(a)` is executed when f(1.1, 2) is called, answer with the next line of code to be executed inside the function. Do NOT answer lines in the test code. If not or program terminates after this line, answer with -1.
+[/QUESTION]
+[ANSWER]
+return ans
+[/ANSWER]
+
+[PYTHON]
+def f(a, b):
+    ans = a + b
+    if ans > 0:
+        ans = int(a)
+    else:
+        ans = b
+    return ans
+
+f(1.1, -2)
+[/PYTHON]
+[QUESTION]
+If the line `        ans = int(a)` is executed when f(1.1, -2) is called, answer with the next line of code to be executed inside the function. Do NOT answer lines in the test code. If not or program terminates after this line, answer with -1.
+[/QUESTION]
+[ANSWER]
+-1
+[/ANSWER]
+
+[PYTHON]
+class A:
+    def f(self, x):
+        z = self.g(x)
+        return z
+    
+    def g(self, y):
+        return y*2
+
+a = A()
+assertEqual(a.f(3), 6)
+[/PYTHON]
+[QUESTION]
+If the line `        z = self.g(x)` is executed when the above test code is called, answer with the next line of code to be executed inside the function. Do NOT answer lines in the test code. If not or program terminates after this line, answer with -1.
+[/QUESTION]
+[ANSWER]
+return y*2
+[/ANSWER]
+
+[PYTHON]
+{code}
+{invocation}
+[/PYTHON]
+[QUESTION]
+If the line `{codeline}` is executed when {invocation_abbr} is called, answer with the next line of code to be executed inside the function. Do NOT answer lines in the test code. If not or program terminates after this line, answer with -1.
+[/QUESTION]
+[ANSWER]

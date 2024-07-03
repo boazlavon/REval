@@ -1,0 +1,16 @@
+backoff==2.2.1
+bullet==2.2.0
+openai==1.13.3
+pandas==2.2.1
+python-dotenv==1.0.1
+pytz==2023.3.post1
+staticfg==0.9.5
+tqdm==4.66.2
+# required by code in ClassEval dataset
+# refer to: https://github.com/FudanSELab/ClassEval/blob/master/requirements.txt
+beautifulsoup4~=4.11.1
+gensim~=4.2.0
+nltk~=3.7
+# relax the constraint of numpy to avoid conflict with other packages
+numpy
+lxml==5.1.0

@@ -1,0 +1,13 @@
+google/gemma-2b-it, https://huggingface.co/google/gemma-2b-it
+google/gemma-7b-it, https://huggingface.co/google/gemma-7b-it
+mistralai/Mistral-7B-Instruct-v0.2, https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
+codellama/CodeLlama-7b-hf, https://huggingface.co/codellama/CodeLlama-7b-hf
+codellama/CodeLlama-7b-Instruct-hf, https://huggingface.co/codellama/CodeLlama-7b-Instruct-hf
+codellama/CodeLlama-7b-Python-hf, https://huggingface.co/codellama/CodeLlama-7b-Python-hf
+codellama/CodeLlama-13b-Instruct-hf, https://huggingface.co/codellama/CodeLlama-13b-Instruct-hf
+codellama/CodeLlama-34b-Instruct-hf, https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf
+bigcode/starcoder2-3b, https://huggingface.co/bigcode/starcoder2-3b
+bigcode/starcoder2-7b, https://huggingface.co/bigcode/starcoder2-7b
+bigcode/starcoder2-15b, https://huggingface.co/bigcode/starcoder2-15b
+ise-uiuc/Magicoder-CL-7B, https://huggingface.co/ise-uiuc/Magicoder-CL-7B
+ise-uiuc/Magicoder-S-CL-7B, https://huggingface.co/ise-uiuc/Magicoder-S-CL-7B
