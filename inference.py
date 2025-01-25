@@ -10,7 +10,7 @@ try:
 except ImportError:
     print('Please install the openai package')
 try:
-    from vllm import LLM, SamplingParams
+    from vllm.entrypoints.llm import LLM, SamplingParams
 except ImportError:
     print('Please install the vllm package')
 
@@ -100,7 +100,7 @@ class VllmModel(Model):
 
     def infer(self, prompt: str) -> str:
         response = self.model.generate(prompt, 
-                                       self.sampling_params, use_tqdm=False)[0]
+                                       self.sampling_params, use_tqdm=True)[0]
         return response.outputs[0].text
 
 class VllmClientModel(Model):

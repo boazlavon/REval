@@ -4,6 +4,8 @@ by inspecting the code with specific rules.
 '''
 import ast
 import json
+import re
+from datasets import load_dataset
 
 import pandas as pd
 
@@ -12,6 +14,9 @@ from tqdm import tqdm
 
 from dataset import DREval
 from dynamics import FunctionFactory, ClassFactory, States, Sandbox
+
+ASSERT_PATTERN = r"^assert\s*\(*\s*(\w+)\s*\((.*)\)\s*\)*\s*==\s*(.+)$"
+INVOCATION_TEMPLATE = "{function_name}{args}"
 
 # In basic blocks, we are only interested in the following statements
 WANTED_STMTS = (ast.Assign, ast.AugAssign, ast.AnnAssign, 
@@ -255,6 +260,155 @@ def inspect_test(test_code):
         expr.args[idx] = ast.Name(id='??')
     return ast.unparse(tree)
 
+
+def parse_assert_statement(assert_statement):
+    match = re.match(ASSERT_PATTERN, assert_statement.strip())
+    if not match:
+        print(assert_statement)
+        raise ValueError(f"Invalid assert statement format. {assert_statement}")
+
+    function_name = match.group(1)
+    args_str = match.group(2)
+    args_str = f"({args_str})"
+    expected_result_str = match.group(3)
+    # args = ast.literal_eval(f"({args_str})") if args_str else ()
+    # expected_result = ast.literal_eval(expected_result_str)
+
+    return (function_name, args_str, expected_result_str)
+
+
+def process_mbpp_dataset():
+    mbpp_res = []
+    mbpp_data = []
+    empty_tasks = []
+    invalid_tasks = []
+    valid_tasks = []
+    ds_full = load_dataset("google-research-datasets/mbpp", "full")
+    for idx, d in enumerate(tqdm(ds_full['test'])):
+        idx += DREval.MBPP_START
+        if idx in (266, 265, 210):
+            continue
+        if idx in (272,276, 285, 438, 475, 483, 541, 562):
+            continue
+        item = {'task_id': f'DREval/{idx}', 'idx': idx, 'tasks': []}
+        code = d["code"].replace("\r\n", "\n")
+        #test_list = d["test_list"] + d["challenge_test_list"]
+        test_list = d["test_list"]
+        inputs = []
+        innvocations = []
+        outputs = []
+        fn_names = []
+
+        test_setup = d["test_setup_code"].replace("\r\n", "\n")
+        if test_setup:
+            print(f"Skipping test setups for now")
+            continue
+
+        for input_idx, test_assert_statment in enumerate(test_list):
+            try:
+                if len(item['tasks']) >= DREval.MAX_INPUTS:
+                    break
+                print(f"Start Processing Task {idx}, Test {input_idx}")
+                try:
+                    fn_name, _input, _ = parse_assert_statement(test_assert_statment)
+                except Exception as e:
+                    print(f"Skipping test due to error: {e}")
+                
+                invocation = INVOCATION_TEMPLATE.format(function_name=fn_name, args=_input)
+                fn = FunctionFactory.create(fn_name, code)
+                sandbox = Sandbox(fn)
+                s1 = inspect_execution(code)
+                for i in range(2):
+                    try:
+                        _output, states = sandbox.run(*eval(_input))
+                    except TypeError:
+                        old_inputs = _input
+                        _input = _input.replace(')', ',)')
+                        print(f'#2 Fix inputs: {old_inputs} -> {_input}')
+                        continue
+
+                    if 'exception' in sandbox.status:
+                        if i == 0:
+                            old_inputs = _input
+                            _input = f"[{_input},]"
+                            print()
+                            print(f'#1 Fix inputs: {old_inputs} -> {_input}')
+                
+                assert sandbox.status == 'ok', f'Error: {sandbox.status} caused by DREval/{idx}: {fn_name}{_input}'
+                inputs.append(_input)
+                fn_names.append(fn_name)
+                outputs.append(_output)
+                innvocations.append(invocation)
+
+                s2 = inspect_variable(code, states)
+                s = s1 & set(map(lambda x: x[0], s2))
+                s = list(map(lambda x: (x, list(filter(lambda y: y[0] == x, s2))[0][1]), s))
+                task = [{'lineno': lineno, 'var': var} for lineno, var in s]
+                if len(task) > 0:
+                    item['tasks'].append({'input_idx': input_idx, 'task': task, 'output_pred': f'assert {invocation}) == ??'})
+                    print(f"Finished Processing Task {idx}, Test {input_idx}")
+                    valid_tasks.append((idx, input_idx))
+                else:
+                    print(f"Empty Processing Task {idx}, Test {input_idx}")
+                    empty_tasks.append((idx, input_idx))
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"Skipping Task {idx}, Test {input_idx}")
+                invalid_tasks.append((idx, input_idx))
+            print()
+        
+        # make sure fn_name is consistent
+        # 
+        fn_names = set(fn_names)
+        assert len(fn_names) == 1, f"Different function names: {fn_names}"
+        fn_name = list(fn_names)[0]
+        data_entry = {
+            'task_id': item['task_id'],
+            'code': code,
+            'entry_point': fn_name,
+            'inputs': inputs,
+            'outputs': outputs,
+            'innvocations': innvocations,
+        }
+        import pprint
+        pprint.pprint(data_entry)
+        mbpp_data.append(data_entry)
+        mbpp_res.append(item)
+    
+    print(f"Valid tasks: {len(valid_tasks)}")
+    print(len(set([idx for idx, _ in valid_tasks])))
+
+    print(f"Invalid tasks: {len(invalid_tasks)}")
+    print(len(set([idx for idx, _ in invalid_tasks])))
+
+    print(f"Empty tasks: {len(empty_tasks)}")
+    print(len(set([idx for idx, _ in empty_tasks])))
+
+    print(f"Total tasks: {len(ds_full['test'])}")
+    print(len(set([idx for idx, _ in enumerate(ds_full['test'])])))
+
+    final_mbpp_data = []
+    final_mbpp_res  = []
+    for data, item in zip(mbpp_data, mbpp_res):
+        try:
+            json.dumps(data)
+        except:
+            continue
+        if not len(item['tasks']):
+            continue
+
+        final_mbpp_data.append(data)
+        final_mbpp_res.append(item)
+
+    with open('data/DREval_tasks_mbpp.jsonl', 'w') as f:
+        f.writelines([json.dumps(r) + '\n' for r in final_mbpp_res])
+
+    with open('data/DREval_data_mbpp.jsonl', 'w') as f:
+        f.writelines([json.dumps(r) + '\n' for r in final_mbpp_data])
+
+    
 # Note: The generated task data might change very slightly (e.g., lineno order) 
 # after re-run due to the `set`s in the implementation.
 def process_dataset():
@@ -320,3 +474,4 @@ def process_dataset():
 
 if __name__ == '__main__':
     process_dataset()
+    process_mbpp_dataset()

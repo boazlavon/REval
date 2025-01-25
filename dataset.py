@@ -46,6 +46,8 @@ class DREval(ClassEval):
     HUMANEVAL_END   = 84
     CLASSEVAL_START = 85
     CLASSEVAL_END   = 153
+    MBPP_START      = 154
+    MBPP_END        = 654
 
     # Limit max number of inputs
     # due to computational budgets
