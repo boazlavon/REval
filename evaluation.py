@@ -36,22 +36,35 @@ class Task:
         self.model = model
         self.prompt_type = prompt_type
         assert prompt_type in ['direct', 'cot'], 'Use a valid prompt type: direct, cot'
-        assert self.model.prompt_type == prompt_type, 'Model prompt type must match task prompt type'
-        self.data = pd.read_json(f'data/DREval_data.jsonl', lines=True).to_dict('records')
-        self.task_data = pd.read_json(f'data/DREval_tasks.jsonl', lines=True).to_dict('records')
+        self.mock = False
+        if ('custom_mock' in kwargs) and kwargs['custom_mock']:
+            self.mock = True
+        if not self.mock:
+            assert self.model.prompt_type == prompt_type, 'Model prompt type must match task prompt type'
+        data_path = f'data/DREval_data.jsonl'
+        task_path = f'data/DREval_tasks.jsonl'
+        print(f"Data path: {data_path}")
+        print(f"Task path: {task_path}")
+        self.data = pd.read_json(data_path, lines=True).to_dict('records')
+        self.task_data = pd.read_json(task_path, lines=True).to_dict('records')
         self.records = []
     
     def _get_code(self, idx) -> str:
-        return self.data[idx]['code']
+        return self._get(idx, 'code')
     
     def _get_entry_point(self, idx) -> str:
-        return self.data[idx]['entry_point']
+        return self._get(idx, 'entry_point')
 
     def _get_inputs(self, idx) -> str:
-        return self.data[idx]['inputs']
+        return self._get(idx, 'inputs')
+
+    def _get_innvocations(self, idx) -> str:
+        return self._get(idx, 'innvocations')
     
     def _get(self, idx, key) -> str:
-        return self.data[idx][key]
+        for entry in self.data:
+            if entry['task_id'] == f'DREval/{idx}':
+                return entry[key]
     
     def _build_prompt(self, **kwargs):
         if self.prompt_type == 'direct':
@@ -67,7 +80,7 @@ class Task:
     def _postprocess(self, resp: str):
         raise NotImplementedError()
     
-    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input):
+    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input, invocation=None):
         raise NotImplementedError()
 
     def _classeval_task_impl(self, test_cls, task, _input):
@@ -79,7 +92,13 @@ class Task:
     
     @property
     def _save_path(self):
-        return f'model_generations/{self.name}@{self.model.info}'
+        if self.mock:
+            name = 'NoneModel'
+            model_info = 'NoneInfo'
+        else:
+            name = self.name
+            model_info = self.model.info
+        return f'model_generations/{name}@{model_info}'
     
     def run(self):
         os.makedirs(self._save_path, exist_ok=True)
@@ -88,6 +107,7 @@ class Task:
             pairs = task['tasks']
             self.records.append({'task_id': f'DREval/{idx}', 'generation': []})
             if DREval.HUMANEVAL_START <= idx <= DREval.HUMANEVAL_END:
+                continue
                 code = self._get_code(idx)
                 fn_name = self._get_entry_point(idx)
                 fn = FunctionFactory.create(fn_name, code)
@@ -101,6 +121,7 @@ class Task:
                     res = self._humaneval_task_impl(fn_name, code, pair['task'], sandbox, _input)
                     self.records[-1]['generation'].append({'input_idx': pair['input_idx'], 'results': res})
             elif DREval.CLASSEVAL_START <= idx <= DREval.CLASSEVAL_END:
+                continue
                 cls_code = self._get_code(idx)
                 cls_name = self._get_entry_point(idx)
                 test_code = self._get(idx, 'test')
@@ -117,6 +138,23 @@ class Task:
                     else:
                         _input = inputs[pair['input_idx']]
                     res = self._classeval_task_impl(test_cls, pair['task'], _input)
+                    self.records[-1]['generation'].append({'input_idx': pair['input_idx'], 'results': res})
+            elif DREval.MBPP_START <= idx <= DREval.MBPP_END:
+                code = self._get_code(idx)
+                fn_name = self._get_entry_point(idx)
+                fn = FunctionFactory.create(fn_name, code)
+                sandbox = Sandbox(fn)
+                inputs = self._get_inputs(idx)
+                innvocations = self._get_innvocations(idx)
+
+                for pair in pairs:
+                    if self.__class__.__name__ == 'Output':
+                        _input = pair['output_pred']
+                    else:
+                        _input = inputs[pair['input_idx']]
+
+                    _invocation = innvocations[pair['input_idx']]
+                    res = self._humaneval_task_impl(fn_name, code, pair['task'], sandbox, _input, invocation=_invocation)
                     self.records[-1]['generation'].append({'input_idx': pair['input_idx'], 'results': res})
             else:
                 raise ValueError(f'Invalid data index: {idx}')
@@ -195,10 +233,11 @@ class Coverage(Task):
         else:                    # (False, False)
             self.tn += 1
     
-    def _humaneval_task_impl(self, fn_name, code, task, sandbox, _input):
+    def _humaneval_task_impl(self, fn_name, code, task, sandbox, _input, invocation=None):
         _, states = sandbox.run(*eval(_input))
         assert sandbox.status == 'ok', f'Error: {sandbox.status} caused by {fn_name}{_input}'
-        invocation = f'{fn_name}{_input[:-2]})'
+        if invocation is None:
+            invocation = f'{fn_name}{_input[:-2]})'
         codelines = code.split('\n')
         gens = []
         for t in task:
@@ -276,10 +315,11 @@ class Path(Task):
         else:
             return resp
 
-    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input):
+    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input, invocation=None):
         _, states = sandbox.run(*eval(_input))
         assert sandbox.status == 'ok', f'Error: {sandbox.status} caused by {fn_name}{_input}'
-        invocation = f'{fn_name}{_input[:-2]})'
+        if invocation is None:
+            invocation = f'{fn_name}{_input[:-2]})'
         codelines = code.split('\n')
         code = ''.join([str(i+1) + '\t' + codelines[i] + '\n' for i in range(len(codelines))])
         gens = []
@@ -307,6 +347,11 @@ class Path(Task):
                 else:
                     actual.append(a+1)
             gens.append({'generated': model_gen, 'response': ans_to_lines, 'expected': actual})
+            try:
+                result = any(a in actual for a in ans_to_lines)
+                gens.append({'generated': model_gen, 'response': ans_to_lines, 'expected': actual, 'line': line, 'prompt': p, 'result': result})
+            except:
+                gens.append({'generated': model_gen, 'response': ans_to_lines, 'expected': actual})
             self._update_metrics(ans_to_lines, actual)
         return gens
     
@@ -354,7 +399,7 @@ class Path(Task):
 
 class State(Task):
     def __init__(self, model: Model, prompt_type='direct', **kwargs):
-        super().__init__('state', model, prompt_type)
+        super().__init__('state', model, prompt_type, **kwargs)
         self._correct = 0
         self._total = 0
 
@@ -499,10 +544,11 @@ class State(Task):
         except Exception:
             return 'ERROR'
     
-    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input):
+    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input, invocation=None):
         _, states = sandbox.run(*eval(_input))
         assert sandbox.status == 'ok', f'Error: {sandbox.status} caused by {fn_name}{_input}'
-        invocation = f'{fn_name}{_input[:-2]})'
+        if invocation is None:
+            invocation = f'{fn_name}{_input[:-2]})'
         codelines = code.split('\n')
         gens = []
         for t in task:
@@ -512,10 +558,16 @@ class State(Task):
             p = self._build_prompt(code=code, invocation=invocation, 
                                     invocation_abbr=invocation, 
                                     line=line, codeline=codeline, var=var)
-            ans, model_gen = self._prompt_model(p)
+            if self.mock:
+                ans, model_gen = (('mock_value','mock_type'), 'mock_model_gen')
+            else:
+                ans, model_gen = self._prompt_model(p)
             actual = states.interpret_var(line-1, var) # to 0-indexed
             res = self._update_metrics(ans, actual)
-            gens.append({'generated': model_gen, 'eq': res})
+            try:
+                gens.append({'generated': model_gen, 'eq': res, 'line': line, 'var': var, 'prompt': p, 'ans': ans, 'actual': actual})
+            except:
+                gens.append({'generated': model_gen, 'eq': res})
         return gens
 
     def _classeval_task_impl(self, test_cls, task, _input):
@@ -608,10 +660,12 @@ class Output(Task):
             # pad before the first line of resp
             return '\n'.join(in_lines[:diff] + res_lines)
 
-    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input):
+    def _humaneval_task_impl(self, fn_name, code, task, sandbox: Sandbox, _input, invocation=None):
         # make `fn_name` callable in current scope
         locals()[fn_name] = FunctionFactory.create(fn_name, code)
-        p = self._build_prompt(code=code, invocation='\n' + _input)
+        if invocation is None:
+            invocation='\n' + _input
+        p = self._build_prompt(code=code, invocation=invocation)
         ans, model_gen = self._prompt_model(p)
         ans = self._postprocess_phase2(ans, _input)
         status = False
@@ -771,36 +825,48 @@ class Cli:
             f.write(json.dumps(cli.kwargs))
             print(f'Configuration saved to {save_path}')
 
-    def _run(self):
+    def _run(self, mock=False):
         print(f'The arguments for this run: {self.kwargs}')
         if self.kwargs['task'] == 'consistency':
             self.kwargs['mock'] = True
-        model = Model.new(**self.kwargs)
+        if mock:
+            model = None
+            self.kwargs['custom_mock'] = True
+        else:
+            model = Model.new(**self.kwargs)
         self.kwargs['model'] = model
-        task = getattr(sys.modules[__name__], self.kwargs['task'].capitalize())(**self.kwargs)
+        TASKS = {
+            'coverage': Coverage,
+            'path': Path,
+            'state': State,
+            'output': Output
+        }
+        #task = getattr(sys.modules[__name__], self.kwargs['task'].capitalize())(**self.kwargs)
+        task = TASKS[self.kwargs['task']](**self.kwargs)
         task.run()
 
     @staticmethod
-    def run_with_config(load_path='.eval_config'):
+    def run_with_config(load_path='.eval_config', mock=False):
         cli = Cli()
         if not os.path.exists(load_path):
             print(f'Error: {load_path} file not found')
             sys.exit(1)
         with open(load_path, 'r') as f:
             cli.kwargs = json.load(f)
-        cli._run()
+        cli._run(mock)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run evaluation for DREval tasks')
     parser.add_argument('command', nargs='?', type=str, default='run', choices=['config', 'run'], help='Command to run')
     parser.add_argument('-i', '--input', type=str, default='.eval_config', help='specify configuration file to load')
     parser.add_argument('-o', '--output', type=str, default='.eval_config', help='specify configuration file to save')
+    parser.add_argument('--mock', type=bool, default=False, required=False, help='specify whether using the model')
     args = parser.parse_args()
     if args.command == 'config':
         Cli.config(args.output)
         sys.exit(0)
     elif args.command == 'run':
-        Cli.run_with_config(args.input)
+        Cli.run_with_config(args.input, args.mock)
         sys.exit(0)
     else:
         raise RuntimeError('unreachable')
