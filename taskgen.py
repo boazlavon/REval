@@ -5,6 +5,7 @@ by inspecting the code with specific rules.
 import ast
 import json
 import re
+import black
 from datasets import load_dataset
 
 import pandas as pd
@@ -292,6 +293,7 @@ def process_mbpp_dataset():
             continue
         item = {'task_id': f'DREval/{idx}', 'idx': idx, 'tasks': []}
         code = d["code"].replace("\r\n", "\n")
+        code = black.format_str(code, mode=black.Mode(line_length=120))
         #test_list = d["test_list"] + d["challenge_test_list"]
         test_list = d["test_list"]
         inputs = []
@@ -315,6 +317,7 @@ def process_mbpp_dataset():
                     print(f"Skipping test due to error: {e}")
                 
                 invocation = INVOCATION_TEMPLATE.format(function_name=fn_name, args=_input)
+                invocation = black.format_str(invocation, mode=black.Mode(line_length=120))
                 fn = FunctionFactory.create(fn_name, code)
                 sandbox = Sandbox(fn)
                 s1 = inspect_execution(code)
@@ -402,10 +405,10 @@ def process_mbpp_dataset():
         final_mbpp_data.append(data)
         final_mbpp_res.append(item)
 
-    with open('data/DREval_tasks_mbpp.jsonl', 'w') as f:
+    with open('data/DREval_tasks_mbpp.black.jsonl', 'w') as f:
         f.writelines([json.dumps(r) + '\n' for r in final_mbpp_res])
 
-    with open('data/DREval_data_mbpp.jsonl', 'w') as f:
+    with open('data/DREval_data_mbpp.black.jsonl', 'w') as f:
         f.writelines([json.dumps(r) + '\n' for r in final_mbpp_data])
 
     
@@ -473,5 +476,5 @@ def process_dataset():
         f.writelines([json.dumps(r) + '\n' for r in res])
 
 if __name__ == '__main__':
-    process_dataset()
+    #process_dataset()
     process_mbpp_dataset()

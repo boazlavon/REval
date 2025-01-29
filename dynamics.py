@@ -153,6 +153,8 @@ class _NilType:
         pass
     def __repr__(self):
         return 'Nil'
+    def __str__(self):
+        return 'Nil'
 
 try:
     Nil # type: ignore
