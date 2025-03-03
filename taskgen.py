@@ -277,6 +277,138 @@ def parse_assert_statement(assert_statement):
 
     return (function_name, args_str, expected_result_str)
 
+    
+
+
+MAIN_WRAPPER_TEMPLATE_WITH_PRINT = (
+    "def main():\n" "{indented_code}\n" "    return answer\n\n" "main()"
+)
+def transform_execution_trace(code):
+    indented_code = "\n".join(f"    {line}" for line in code.splitlines())
+    return MAIN_WRAPPER_TEMPLATE_WITH_PRINT.format(indented_code=indented_code)
+
+def process_mathqa_dataset():
+    res = []
+    data = []
+    empty_tasks = []
+    invalid_tasks = []
+    valid_tasks = []
+    ds_full = load_dataset("dtruong46me/mathqa-python")
+
+    for idx, sample in enumerate(tqdm(ds_full['test'])):
+        mathqa_idx = sample["task_id"]
+        mathqa_idx += DREval.MATHQA_START
+        # if idx in (266, 265, 210):
+        #     continue
+        # if idx in (272,276, 285, 438, 475, 483, 541, 562):
+        #     continue
+        item = {'task_id': f'DREval/{mathqa_idx}', 'idx': mathqa_idx, 'tasks': []}
+        code = sample["code"].replace("\r\n", "\n")
+        code = transform_execution_trace(code)
+        code = black.format_str(code, mode=black.Mode(line_length=120))
+        print(code)
+        inputs = []
+        innvocations = []
+        outputs = []
+        fn_names = []
+
+        input_idx = 0
+        _input = tuple()
+        fn_name = 'main'
+        try:
+            invocation = 'main()'
+            invocation = black.format_str(invocation, mode=black.Mode(line_length=120))
+            fn = FunctionFactory.create(fn_name, code)
+            sandbox = Sandbox(fn)
+            s1 = inspect_execution(code)
+            _output, states = sandbox.run()
+            
+            assert sandbox.status == 'ok', f'Error: {sandbox.status} caused by DREval/{idx}'
+            inputs.append(_input)
+            fn_names.append(fn_name)
+            outputs.append(_output)
+            innvocations.append(invocation)
+
+            s2 = inspect_variable(code, states)
+            import ipdb; ipdb.set_trace()
+            s = set(map(lambda x: x[0], s2)) & s1
+            s = list(map(lambda x: (x, list(filter(lambda y: y[0] == x, s2))[0][1]), s))
+            task = [{'lineno': lineno, 'var': var} for lineno, var in s]
+            if len(task) > 0:
+                item['tasks'].append({'input_idx': input_idx, 'task': task, 'output_pred': f'assert {invocation}) == ??'})
+                print(f"Finished Processing Task {idx}, Test {input_idx}")
+                valid_tasks.append((idx, input_idx))
+            else:
+                print(f"Empty Processing Task {idx}, Test {input_idx}")
+                empty_tasks.append((idx, input_idx))
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Skipping Task {idx}, Test {input_idx}")
+            invalid_tasks.append((idx, input_idx))
+            print()
+            continue
+        
+        try:
+            fn_names = set(fn_names)
+            assert len(fn_names) == 1, f"Different function names: {fn_names}"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Skipping Task {idx}, Test {input_idx}")
+            invalid_tasks.append((idx, input_idx))
+            print()
+            continue
+            
+        fn_name = list(fn_names)[0]
+        data_entry = {
+            'task_id': item['task_id'],
+            'code': code,
+            'entry_point': fn_name,
+            'inputs': inputs,
+            'outputs': outputs,
+            'innvocations': innvocations,
+        }
+        import pprint
+        pprint.pprint(data_entry)
+        pprint.pprint(item)
+        print()
+        data.append(data_entry)
+        res.append(item)
+    
+    print(f"Valid tasks: {len(valid_tasks)}")
+    print(len(set([idx for idx, _ in valid_tasks])))
+
+    print(f"Invalid tasks: {len(invalid_tasks)}")
+    print(len(set([idx for idx, _ in invalid_tasks])))
+
+    print(f"Empty tasks: {len(empty_tasks)}")
+    print(len(set([idx for idx, _ in empty_tasks])))
+
+    print(f"Total tasks: {len(ds_full['test'])}")
+    print(len(set([idx for idx, _ in enumerate(ds_full['test'])])))
+
+    final_mbpp_data = []
+    final_mbpp_res  = []
+    for data, item in zip(data, res):
+        try:
+            json.dumps(data)
+        except:
+            continue
+        if not len(item['tasks']):
+            continue
+
+        final_mbpp_data.append(data)
+        final_mbpp_res.append(item)
+
+    with open('data/DREval_tasks_mathqa.black.jsonl', 'w') as f:
+        f.writelines([json.dumps(r) + '\n' for r in final_mbpp_res])
+
+    with open('data/DREval_data_mathqa.black.jsonl', 'w') as f:
+        f.writelines([json.dumps(r) + '\n' for r in final_mbpp_data])
+
+
 
 def process_mbpp_dataset():
     mbpp_res = []
@@ -477,4 +609,5 @@ def process_dataset():
 
 if __name__ == '__main__':
     #process_dataset()
-    process_mbpp_dataset()
+    #process_mbpp_dataset()
+    process_mathqa_dataset()
