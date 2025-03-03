@@ -59,8 +59,10 @@ class Task:
             self.tot_parser = TraceOfThoughtsParser(basedir, self.dataset, inference_output_dir)
         # data_path = f'data/DREval_data.jsonl'
         # task_path = f'data/DREval_tasks.jsonl'
-        data_path = f'data/DREval_data_mbpp.black.jsonl'
-        task_path = f'data/DREval_tasks_mbpp.black.jsonl'
+        # data_path = f'data/DREval_data_mbpp.black.jsonl'
+        # task_path = f'data/DREval_tasks_mbpp.black.jsonl'
+        data_path = f'data/DREval_data_mathqa.black.jsonl'
+        task_path = f'data/DREval_tasks_mathqa.black.jsonl'
         print(f"Data path: {data_path}")
         print(f"Task path: {task_path}")
         self.data = pd.read_json(data_path, lines=True).to_dict('records')
@@ -175,6 +177,27 @@ class Task:
                 if not (self.dataset == 'mbpp'):
                     continue
                 mbpp_task_idx = (idx - DREval.MBPP_START) + 11
+                code = self._get_code(idx)
+                fn_name = self._get_entry_point(idx)
+                fn = FunctionFactory.create(fn_name, code)
+                sandbox = Sandbox(fn)
+                inputs = self._get_inputs(idx)
+                innvocations = self._get_innvocations(idx)
+
+                for pair in pairs:
+                    if self.__class__.__name__ == 'Output':
+                        _input = pair['output_pred']
+                    else:
+                        _input = inputs[pair['input_idx']]
+
+                    _invocation = innvocations[pair['input_idx']]
+                    res = self._humaneval_task_impl(fn_name, code, pair['task'], sandbox, _input, invocation=_invocation, mbpp_task_idx=mbpp_task_idx, input_idx=pair['input_idx'])
+                    self.records[-1]['generation'].append({'input_idx': pair['input_idx'], 'results': res})
+            elif DREval.MATHQA_START <= idx <= DREval.MATHQA_END:
+                import ipdb; ipdb.set_trace()
+                if not (self.dataset == 'mathqa'):
+                    continue
+                mbpp_task_idx = (idx - DREval.MATHQA_START)
                 code = self._get_code(idx)
                 fn_name = self._get_entry_point(idx)
                 fn = FunctionFactory.create(fn_name, code)
@@ -1132,9 +1155,9 @@ class Cli:
             'path'   : "/a/home/cc/students/cs/boazlavon/code/REval/model_generations/path@google/gemma-1-2b-it_tot/25-01-29-23-09.valid_test_cases.mbpp.json",
             'state'   : "/a/home/cc/students/cs/boazlavon/code/REval/model_generations/state@google/gemma-1-2b-it_tot/25-01-29-23-01.valid_test_cases.mbpp.json"
         }
-        if self.kwargs['prompt_type'] != TRACE_OF_THOUGHTS_PROMPT_TYPE:
-            self.kwargs['valid_test_cases_path'] = VALID_TEST_CASES_PATH[self.kwargs['task']]
-            print(f"Valid testcases: {self.kwargs['valid_test_cases_path']}")
+        # if self.kwargs['prompt_type'] != TRACE_OF_THOUGHTS_PROMPT_TYPE:
+        #     self.kwargs['valid_test_cases_path'] = VALID_TEST_CASES_PATH[self.kwargs['task']]
+        #     print(f"Valid testcases: {self.kwargs['valid_test_cases_path']}")
         #task = getattr(sys.modules[__name__], self.kwargs['task'].capitalize())(**self.kwargs)
         task = TASKS[self.kwargs['task']](**self.kwargs)
         task.run()

@@ -48,6 +48,8 @@ class DREval(ClassEval):
     CLASSEVAL_END   = 153
     MBPP_START      = 154
     MBPP_END        = 654
+    MATHQA_START    = 655
+    MATHQA_END      = 2583
 
     # Limit max number of inputs
     # due to computational budgets
